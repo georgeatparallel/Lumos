@@ -61,6 +61,7 @@ export class LumosMessage {
   constructor(
     public sender: string,
     public message: string,
+    public webConversationId?: string,
   ) {}
 }
 
@@ -91,6 +92,7 @@ const ChatBar: React.FC = () => {
   const [chatContainerHeight, setChatContainerHeight] = useState(300);
   const [openChatHistory, setOpenChatHistory] = useState(false);
   const [currentChatId, setCurrentChatId] = useState("");
+  const webConversationId = useRef(uuidv4());
 
   const { theme } = useThemeContext();
   const isDarkMode = theme.palette.mode === "dark";
@@ -228,7 +230,11 @@ const ChatBar: React.FC = () => {
     console.log(`Loading chat ID: ${chatId}`);
     chrome.storage.local.get(["chatHistory"], (data) => {
       if (data.chatHistory) {
-        saveMessages(data.chatHistory[chatId].messages);
+        const loaded = data.chatHistory[chatId].messages as LumosMessage[];
+        webConversationId.current =
+          loaded.find((msg) => msg.webConversationId)?.webConversationId ||
+          uuidv4();
+        saveMessages(loaded);
         saveCurrentChatId(chatId);
       }
       // close message history drawer
@@ -282,7 +288,7 @@ const ChatBar: React.FC = () => {
     });
   };
 
-  const updateChat = (chatId?: string) => {
+  const updateChat = (chatId?: string, updatedMessages = messages) => {
     if (chatId) {
       chrome.storage.local.get(["chatHistory"], (data) => {
         if (data.chatHistory) {
@@ -291,8 +297,8 @@ const ChatBar: React.FC = () => {
           // add new chat to chat history
           newChatHistory[chatId] = {
             updatedAt: Date.now(),
-            preview: messages[0].message,
-            messages: messages,
+            preview: updatedMessages[0].message,
+            messages: updatedMessages,
           };
 
           // save new chat history in local storage and update current chat ID
@@ -311,6 +317,7 @@ const ChatBar: React.FC = () => {
   };
 
   const promptWithContent = async (prompt: string) => {
+    const conversationId = webConversationId.current;
     // get default options
     const options = await getLumosOptions();
     const contentConfig = options.contentConfig;
@@ -361,6 +368,7 @@ const ChatBar: React.FC = () => {
           .then(() => {
             chrome.runtime.sendMessage({
               prompt: prompt,
+              webConversationId: conversationId,
               skipRAG: false,
               chunkSize: config.chunkSize,
               chunkOverlap: config.chunkOverlap,
@@ -379,11 +387,18 @@ const ChatBar: React.FC = () => {
     setLoading();
 
     // save user message to messages list
-    const newMessages = [...messages, new LumosMessage("user", prompt)];
+    const newMessages = [
+      ...messages,
+      new LumosMessage("user", prompt, webConversationId.current),
+    ];
     saveMessages(newMessages);
 
     if (parsingDisabled) {
-      chrome.runtime.sendMessage({ prompt: prompt, skipRAG: true });
+      chrome.runtime.sendMessage({
+        prompt: prompt,
+        skipRAG: true,
+        webConversationId: webConversationId.current,
+      });
     } else {
       promptWithContent(prompt);
     }
@@ -407,7 +422,11 @@ const ChatBar: React.FC = () => {
     const lastUserPrompt = newMessages[newMessages.length - 1].message;
 
     if (parsingDisabled) {
-      chrome.runtime.sendMessage({ prompt: lastUserPrompt, skipRAG: true });
+      chrome.runtime.sendMessage({
+        prompt: lastUserPrompt,
+        skipRAG: true,
+        webConversationId: webConversationId.current,
+      });
     } else {
       promptWithContent(lastUserPrompt);
     }
@@ -423,6 +442,7 @@ const ChatBar: React.FC = () => {
   };
 
   const handleClearButtonClick = () => {
+    webConversationId.current = uuidv4();
     saveMessages([]);
     saveCurrentChatId("");
   };
@@ -532,6 +552,7 @@ const ChatBar: React.FC = () => {
     sender: string;
     done: boolean;
   }) => {
+    let completedMessages = messages;
     if (msg.docNo) {
       const skipCacheMsg = msg.skipCache ? " (skipping cache)" : "";
       setLoading1(true);
@@ -541,14 +562,19 @@ const ChatBar: React.FC = () => {
     } else if (msg.completion) {
       setLoading1(false);
       setLoading2(true);
-      appendNonUserMessage(messages, msg.sender, msg.completion);
-    } else if (msg.done) {
+      completedMessages = appendNonUserMessage(
+        messages,
+        msg.sender,
+        msg.completion,
+      );
+    }
+    if (msg.done) {
       // save messages after response streaming is done
-      chrome.storage.session.set({ messages: messages });
+      chrome.storage.session.set({ messages: completedMessages });
       setLoading1(false);
       setLoading2(false);
       setSubmitDisabled(false);
-      updateChat(currentChatId);
+      updateChat(currentChatId, completedMessages);
       setPromptPlaceholderText(DEFAULT_PROMPT_PLACEHOLDER_TEXT);
     }
   };
@@ -632,7 +658,10 @@ const ChatBar: React.FC = () => {
           setParsingDisabled(data.parsingDisabled);
         }
         if (data.messages) {
-          const currentMsgs = data.messages;
+          const currentMsgs = data.messages as LumosMessage[];
+          webConversationId.current =
+            currentMsgs.find((msg) => msg.webConversationId)
+              ?.webConversationId || uuidv4();
           setMessages(currentMsgs);
 
           // check if there is a completion in storage to append to the messages list

@@ -2,7 +2,7 @@
     "version": "1.0.17",
     "manifest_version": 3,
     "name": "Lumos",
-    "description": "An LLM co-pilot for browsing the web, powered by local LLMs. Your prompts never leave the browser.",
+    "description": "An LLM co-pilot powered by local LLMs, with optional web search and page fetching.",
     "action": {
         "default_popup": "js/index.html",
         "default_title": "Lumos",
@@ -26,5 +26,11 @@
     "options_ui": {
         "page": "js/options.html",
         "open_in_tab": false
-    }
+    },
+    "optional_host_permissions": [
+        "https://search.parallel.ai/*"
+    ],
+    "optional_permissions": [
+        "declarativeNetRequestWithHostAccess"
+    ]
 }
