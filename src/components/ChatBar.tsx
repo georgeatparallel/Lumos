@@ -227,6 +227,7 @@ const ChatBar: React.FC = () => {
   };
 
   const loadChat = (chatId: string) => {
+    if (submitDisabled) return;
     console.log(`Loading chat ID: ${chatId}`);
     chrome.storage.local.get(["chatHistory"], (data) => {
       if (data.chatHistory) {
@@ -481,6 +482,7 @@ const ChatBar: React.FC = () => {
           loadAttachmentFromClipboard();
           break;
         case ";":
+          if (submitDisabled) return;
           // open message history
           setOpenChatHistory(!openChatHistory);
           break;
@@ -552,7 +554,13 @@ const ChatBar: React.FC = () => {
     completion: string;
     sender: string;
     done: boolean;
+    webConversationId?: string;
   }) => {
+    if (
+      msg.webConversationId &&
+      msg.webConversationId !== webConversationId.current
+    )
+      return;
     let completedMessages = messages;
     if (msg.docNo) {
       const skipCacheMsg = msg.skipCache ? " (skipping cache)" : "";
@@ -650,7 +658,7 @@ const ChatBar: React.FC = () => {
     );
 
     chrome.storage.session.get(
-      ["prompt", "parsingDisabled", "messages", "attachment"],
+      ["prompt", "parsingDisabled", "messages", "attachment", "webCompletion"],
       (data) => {
         if (data.prompt) {
           setPrompt(data.prompt);
@@ -659,11 +667,25 @@ const ChatBar: React.FC = () => {
           setParsingDisabled(data.parsingDisabled);
         }
         if (data.messages) {
-          const currentMsgs = data.messages as LumosMessage[];
+          let currentMsgs = data.messages as LumosMessage[];
           webConversationId.current =
             currentMsgs.find((msg) => msg.webConversationId)
               ?.webConversationId || uuidv4();
           setMessages(currentMsgs);
+          // A closed popup may have missed a web result. Restore only the
+          // current conversation's result, without syncing it to other devices.
+          if (data.webCompletion) {
+            const pending = data.webCompletion;
+            if (pending.webConversationId === webConversationId.current) {
+              currentMsgs = appendNonUserMessage(
+                currentMsgs,
+                pending.sender,
+                pending.completion,
+              );
+              chrome.storage.session.set({ messages: currentMsgs });
+            }
+            chrome.storage.session.remove(["webCompletion"]);
+          }
 
           // check if there is a completion in storage to append to the messages list
           chrome.storage.sync.get(["completion", "sender"], (data) => {

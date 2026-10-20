@@ -31,6 +31,7 @@ beforeAll(() => {
           callback(saved),
       },
       sync: { set: jest.fn() },
+      session: { set: jest.fn() },
     },
     permissions: { contains: jest.fn().mockResolvedValue(true) },
     declarativeNetRequest: {
@@ -114,6 +115,7 @@ test.each([true, false])(
         completion: "Current Ollama documentation\nhttps://ollama.com/blog",
         sender: "tool",
         done: true,
+        webConversationId: "opaque-conversation-a",
       },
     ]);
   },
@@ -131,3 +133,23 @@ test("URL errors are displayed through the ordinary tool message consumer", asyn
 });
 
 export {};
+
+test("closed-popup web replies retain tagged conversation context in local session storage", async () => {
+  (chrome.runtime.sendMessage as jest.Mock).mockRejectedValueOnce(
+    new Error("popup closed"),
+  );
+  await listener({
+    prompt: "search: Ollama release notes",
+    skipRAG: true,
+    webConversationId: "opaque-conversation-a",
+  });
+  expect(chrome.storage.session.set).toHaveBeenCalledWith({
+    webCompletion: {
+      completion: "Current Ollama documentation\nhttps://ollama.com/blog",
+      sender: "tool",
+      done: true,
+      webConversationId: "opaque-conversation-a",
+    },
+  });
+  expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+});

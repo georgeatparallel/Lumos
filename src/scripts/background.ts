@@ -281,12 +281,16 @@ const streamChunks = async (stream: IterableReadableStream<string>) => {
   });
 };
 
-const deliverWebAnswer = async (answer: string) => {
+const deliverWebAnswer = async (answer: string, webConversationId?: string) => {
+  const message = {
+    completion: answer,
+    sender: "tool",
+    done: true,
+    webConversationId,
+  };
   await chrome.runtime
-    .sendMessage({ completion: answer, sender: "tool", done: true })
-    .catch(() =>
-      chrome.storage.sync.set({ completion: answer, sender: "tool" }),
-    );
+    .sendMessage(message)
+    .catch(() => chrome.storage.session.set({ webCompletion: message }));
 };
 
 chrome.runtime.onMessage.addListener(async (request) => {
@@ -301,7 +305,8 @@ chrome.runtime.onMessage.addListener(async (request) => {
           request.webConversationId,
           signal,
         );
-        if (!signal.aborted) await deliverWebAnswer(answer);
+        if (!signal.aborted)
+          await deliverWebAnswer(answer, request.webConversationId);
         return;
       }
     } catch (error) {
@@ -310,7 +315,7 @@ chrome.runtime.onMessage.addListener(async (request) => {
           error instanceof Error
             ? error.message
             : "Unable to execute web tool.";
-        await deliverWebAnswer(answer);
+        await deliverWebAnswer(answer, request.webConversationId);
       }
       return;
     }
