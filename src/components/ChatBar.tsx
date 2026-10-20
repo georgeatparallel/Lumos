@@ -71,6 +71,16 @@ export interface Attachment {
   lastModified: number;
 }
 
+interface BackgroundMessage {
+  docNo: number;
+  docCount: number;
+  skipCache: boolean;
+  completion: string;
+  sender: string;
+  done: boolean;
+  webConversationId?: string;
+}
+
 const ChatBar: React.FC = () => {
   const [prompt, setPrompt] = useState("");
   const [promptError, setPromptError] = useState(false);
@@ -93,6 +103,8 @@ const ChatBar: React.FC = () => {
   const [openChatHistory, setOpenChatHistory] = useState(false);
   const [currentChatId, setCurrentChatId] = useState("");
   const webConversationId = useRef(uuidv4());
+  const [conversationReady, setConversationReady] = useState(false);
+  const pendingWebMessages = useRef(new Map<string, BackgroundMessage>());
 
   const { theme } = useThemeContext();
   const isDarkMode = theme.palette.mode === "dark";
@@ -385,6 +397,7 @@ const ChatBar: React.FC = () => {
   };
 
   const handleSendButtonClick = async () => {
+    if (!conversationReady || submitDisabled) return;
     setLoading();
 
     // save user message to messages list
@@ -413,6 +426,7 @@ const ChatBar: React.FC = () => {
   };
 
   const regenerate = () => {
+    if (!conversationReady || submitDisabled || messages.length < 2) return;
     setLoading();
 
     // delete last message (assistant/tool message)
@@ -450,6 +464,7 @@ const ChatBar: React.FC = () => {
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (!conversationReady) return;
     if (event.metaKey || event.altKey) {
       const toggledParsingDisabled = !parsingDisabled;
 
@@ -547,15 +562,11 @@ const ChatBar: React.FC = () => {
     return newMessages;
   };
 
-  const handleBackgroundMessage = (msg: {
-    docNo: number;
-    docCount: number;
-    skipCache: boolean;
-    completion: string;
-    sender: string;
-    done: boolean;
-    webConversationId?: string;
-  }) => {
+  const handleBackgroundMessage = (msg: BackgroundMessage) => {
+    if (msg.webConversationId && !conversationReady) {
+      pendingWebMessages.current.set(msg.webConversationId, msg);
+      return;
+    }
     if (
       msg.webConversationId &&
       msg.webConversationId !== webConversationId.current
@@ -591,6 +602,11 @@ const ChatBar: React.FC = () => {
   useEffect(() => {
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
     document.addEventListener("keydown", handleKeyDown);
+    if (conversationReady) {
+      const pending = pendingWebMessages.current.get(webConversationId.current);
+      pendingWebMessages.current.clear();
+      if (pending) handleBackgroundMessage(pending);
+    }
 
     return () => {
       chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
@@ -702,7 +718,10 @@ const ChatBar: React.FC = () => {
               setPromptPlaceholderText(DEFAULT_PROMPT_PLACEHOLDER_TEXT);
               chrome.storage.sync.remove(["completion", "sender"]);
             }
+            setConversationReady(true);
           });
+        } else {
+          setConversationReady(true);
         }
         if (data.attachment) {
           setAttachment(data.attachment);
@@ -715,7 +734,9 @@ const ChatBar: React.FC = () => {
     if (!submitDisabled && textFieldRef.current) {
       textFieldRef.current.focus();
     }
-  }, [submitDisabled]);
+  }, [submitDisabled, conversationReady]);
+
+  if (!conversationReady) return <Box>Loading chat...</Box>;
 
   return (
     <Box>
