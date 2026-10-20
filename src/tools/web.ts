@@ -64,7 +64,6 @@ export const setWebPermission = async (allow: boolean): Promise<boolean> => {
     // Called directly from a button click so Chrome can display its permission prompt.
     return chrome.permissions.request({
       origins: [WEB_ORIGIN],
-      permissions: ["declarativeNetRequestWithHostAccess"],
     });
   }
   // Revoke consent first so every later RPC is blocked while rules are cleaned up.
@@ -224,7 +223,6 @@ export const callWebTool = async (
 ): Promise<string> => {
   if (!conversationId) throw new Error("Missing web conversation identifier.");
   if (signal.aborted) throw new Error("Web request cancelled.");
-  await prepareWebRequests();
   const controller = new AbortController();
   const cancel = () => controller.abort();
   signal.addEventListener("abort", cancel, { once: true });
@@ -276,38 +274,54 @@ export const callWebTool = async (
       );
     return message.result;
   };
+  // Native Chrome APIs cannot be aborted. Bound the whole operation as well
+  // as fetch, including preparation and per-request consent checks.
+  let abortOperation!: () => void;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    abortOperation = () => reject(new Error("Web operation aborted."));
+    controller.signal.addEventListener("abort", abortOperation, { once: true });
+    if (controller.signal.aborted) abortOperation();
+  });
   try {
-    const initialized = await rpc("initialize", {
-      protocolVersion: "2025-03-26",
-      capabilities: {},
-      clientInfo: { name: "Lumos", version: "1.0.17" },
-    });
-    if (initialized.protocolVersion !== "2025-03-26")
-      throw new Error("Unsupported web provider protocol version.");
-    await rpc("notifications/initialized", {}, true);
-    const discovery = await rpc("tools/list", {});
-    const tools = discovery.tools as { name: string }[];
-    if (
-      !Array.isArray(tools) ||
-      !tools.some((tool) => tool.name === request.name)
-    )
-      throw new Error("The requested web tool is unavailable.");
-    const result = await rpc("tools/call", {
-      name: request.name,
-      arguments: { ...request.arguments, session_id: conversationId },
-    });
-    if (result.isError)
-      throw new Error("Web provider could not complete the request.");
-    const content = result.content as { type: string; text?: string }[];
-    const text = Array.isArray(content)
-      ? content
-          .filter((item) => item.type === "text")
-          .map((item) => item.text || "")
-          .join("\n")
-      : "";
-    if (!text) throw new Error("Web provider returned no text.");
-    // The provider returns answer-ready excerpts and source URLs as tool text.
-    return formatWebResult(result, text);
+    return await Promise.race([
+      (async () => {
+        if (controller.signal.aborted)
+          throw new Error("Web operation aborted.");
+        await prepareWebRequests();
+        const initialized = await rpc("initialize", {
+          protocolVersion: "2025-03-26",
+          capabilities: {},
+          clientInfo: { name: "Lumos", version: "1.0.17" },
+        });
+        if (initialized.protocolVersion !== "2025-03-26")
+          throw new Error("Unsupported web provider protocol version.");
+        await rpc("notifications/initialized", {}, true);
+        const discovery = await rpc("tools/list", {});
+        const tools = discovery.tools as { name: string }[];
+        if (
+          !Array.isArray(tools) ||
+          !tools.some((tool) => tool.name === request.name)
+        )
+          throw new Error("The requested web tool is unavailable.");
+        const result = await rpc("tools/call", {
+          name: request.name,
+          arguments: { ...request.arguments, session_id: conversationId },
+        });
+        if (result.isError)
+          throw new Error("Web provider could not complete the request.");
+        const content = result.content as { type: string; text?: string }[];
+        const text = Array.isArray(content)
+          ? content
+              .filter((item) => item.type === "text")
+              .map((item) => item.text || "")
+              .join("\n")
+          : "";
+        if (!text) throw new Error("Web provider returned no text.");
+        // The provider returns answer-ready excerpts and source URLs as tool text.
+        return formatWebResult(result, text);
+      })(),
+      interrupted,
+    ]);
   } catch (error) {
     if (controller.signal.aborted)
       throw new Error(
@@ -315,6 +329,7 @@ export const callWebTool = async (
       );
     throw error;
   } finally {
+    controller.signal.removeEventListener("abort", abortOperation);
     clearTimeout(timeout);
     signal.removeEventListener("abort", cancel);
   }

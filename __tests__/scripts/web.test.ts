@@ -352,3 +352,24 @@ test("revoking host consent blocks requests while header cleanup is pending", as
   finishCleanup();
   await expect(revoking).resolves.toBe(false);
 });
+
+test("timeout and cancellation cover a stalled native Chrome preparation call", async () => {
+  jest.useFakeTimers();
+  updateSessionRules.mockImplementationOnce(() => new Promise(() => undefined));
+  const controller = new AbortController();
+  const timed = expect(
+    callWebTool(search, "conversation-a", controller.signal),
+  ).rejects.toThrow("timed out");
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  jest.advanceTimersByTime(30001);
+  await timed;
+  updateSessionRules.mockImplementationOnce(() => new Promise(() => undefined));
+  const cancelled = expect(
+    callWebTool(search, "conversation-a", controller.signal),
+  ).rejects.toThrow("cancelled");
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  controller.abort();
+  await cancelled;
+  expect(global.fetch).not.toHaveBeenCalled();
+  jest.useRealTimers();
+});

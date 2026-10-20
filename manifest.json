@@ -21,7 +21,8 @@
         "activeTab",
         "scripting",
         "storage",
-        "clipboardRead"
+        "clipboardRead",
+        "declarativeNetRequestWithHostAccess"
     ],
     "options_ui": {
         "page": "js/options.html",
@@ -29,8 +30,5 @@
     },
     "optional_host_permissions": [
         "https://search.parallel.ai/*"
-    ],
-    "optional_permissions": [
-        "declarativeNetRequestWithHostAccess"
     ]
 }
