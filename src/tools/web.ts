@@ -237,6 +237,12 @@ export const callWebTool = async (
     notification = false,
   ) => {
     const requestId = ++id;
+    // The endpoint permits cross-origin requests, so Chrome host revocation
+    // alone cannot enforce consent between handshake and the tool call.
+    if (!(await hasWebPermission()))
+      throw new Error(
+        "Allow web access in Lumos Options before using web tools.",
+      );
     const response = await fetch(WEB_ENDPOINT, {
       method: "POST",
       credentials: "omit",

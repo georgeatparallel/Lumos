@@ -313,3 +313,21 @@ test.each([false, true])(
     if (partial) expect(result).toContain("Useful public excerpt.");
   },
 );
+
+test.each(["initialize", "tools/list"])(
+  "revocation after %s prevents any subsequent request",
+  async (stage) => {
+    const normalFetch = global.fetch;
+    global.fetch = jest.fn(async (url, init) => {
+      const response = await normalFetch(url, init);
+      const rpc = JSON.parse(init!.body as string);
+      if (rpc.method === stage) contains.mockResolvedValue(false);
+      return response;
+    }) as typeof fetch;
+    await expect(
+      callWebTool(search, "conversation-a", new AbortController().signal),
+    ).rejects.toThrow("Allow web access");
+    expect(requests.at(-1)!.rpc.method).toBe(stage);
+    expect(requests.some((r) => r.rpc.method === "tools/call")).toBe(false);
+  },
+);
