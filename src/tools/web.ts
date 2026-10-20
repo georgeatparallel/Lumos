@@ -198,6 +198,21 @@ const formatWebResult = (
       // An invalid source URL must not become a clickable tool result.
     }
   }
+  if ("errors" in data && Array.isArray(data.errors) && data.errors.length) {
+    for (const error of data.errors) {
+      let source = "A requested page";
+      try {
+        const url = new URL(error.url);
+        if (["http:", "https:"].includes(url.protocol)) source = url.href;
+      } catch {
+        // Do not turn malformed provider URLs into links.
+      }
+      const status = Number.isInteger(error.http_status_code)
+        ? ` (HTTP ${error.http_status_code})`
+        : "";
+      pages.push(`Could not fetch ${source}${status}.`);
+    }
+  }
   return pages.join("\n\n") || "No web results found.";
 };
 

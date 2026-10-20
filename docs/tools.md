@@ -22,6 +22,6 @@ Lumos includes [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/s
 
 Web tools run only with their prefix, never by automatic prompt classification. Customize each prefix or disable **Web Search** and **Fetch Page** independently under **Enable/Disable Tools**. Prefixes must be nonempty. Existing Calculator and model settings are preserved. Select **Revoke web access** to prevent all web-tool requests.
 
-Only the search query or requested URL is sent to Parallel, along with a random conversation identifier. Page content, attachments and chat history are not sent. Clearing the chat starts a new identifier; retries and follow-up requests keep the current one. Local inference still uses Ollama. See Parallel's [privacy policy](https://parallel.ai/privacy-policy).
+Only the search query or requested URL is sent to Parallel, along with a random conversation identifier. Web tools do not send page content, attachments or chat history to Parallel. Clearing the chat starts a new identifier; retries and follow-up requests keep the current one. Inference continues to use your configured Ollama server. See Parallel's [privacy policy](https://parallel.ai/privacy-policy).
 
 Results appear as tool messages with source excerpts and URLs. Access failures and rate limits appear as tool errors, without silently switching providers. Requests time out after 30 seconds and can be cancelled with `ctrl + c`. The anonymous service is intended for light use and has usage limits.

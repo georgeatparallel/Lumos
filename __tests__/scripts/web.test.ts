@@ -263,3 +263,53 @@ test("tool results show excerpts and safe source links without protocol metadata
   expect(output).toContain("Useful release notes.");
   expect(output).not.toMatch(/internal-id|sku_search|javascript:/);
 });
+
+test.each([false, true])(
+  "fetch access errors remain visible with partial success=%s",
+  async (partial) => {
+    const normalFetch = global.fetch;
+    global.fetch = jest.fn(async (url, init) => {
+      const rpc = JSON.parse(init!.body as string);
+      if (rpc.method !== "tools/call") return normalFetch(url, init);
+      const data = {
+        results: partial
+          ? [
+              {
+                title: "Public page",
+                url: "https://example.org",
+                excerpts: ["Useful public excerpt."],
+              },
+            ]
+          : [],
+        errors: [
+          {
+            url: "https://example.org/private",
+            error_type: "HTTP_ERROR",
+            http_status_code: 403,
+            content: null,
+          },
+        ],
+      };
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: rpc.id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(data) }],
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+    const result = await callWebTool(
+      fetchPage,
+      "conversation-a",
+      new AbortController().signal,
+    );
+    expect(result).toContain(
+      "Could not fetch https://example.org/private (HTTP 403).",
+    );
+    expect(result).not.toContain("No web results found.");
+    if (partial) expect(result).toContain("Useful public excerpt.");
+  },
+);

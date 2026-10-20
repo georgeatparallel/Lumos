@@ -444,8 +444,9 @@ const Options: React.FC = () => {
         </Box>
         <Box sx={{ my: "10px" }}>
           Web tools send only the query after the search prefix or URL after the
-          fetch prefix to Parallel. Page content, attachments and chat history
-          stay local. No account or API key is needed.
+          fetch prefix to Parallel. Web tools do not send page content,
+          attachments or chat history to Parallel. Ollama settings are
+          unchanged. No account or API key is needed.
           <Button
             onClick={() => {
               setWebPermission(!webAllowed)
