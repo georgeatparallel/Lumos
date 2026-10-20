@@ -442,6 +442,7 @@ const ChatBar: React.FC = () => {
   };
 
   const handleClearButtonClick = () => {
+    if (submitDisabled) return;
     webConversationId.current = uuidv4();
     saveMessages([]);
     saveCurrentChatId("");

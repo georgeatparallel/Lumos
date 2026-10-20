@@ -67,10 +67,11 @@ export const setWebPermission = async (allow: boolean): Promise<boolean> => {
       permissions: ["declarativeNetRequestWithHostAccess"],
     });
   }
+  // Revoke consent first so every later RPC is blocked while rules are cleaned up.
+  await chrome.permissions.remove({ origins: [WEB_ORIGIN] });
   await chrome.declarativeNetRequest.updateSessionRules({
     removeRuleIds: [HEADER_RULE_ID],
   });
-  await chrome.permissions.remove({ origins: [WEB_ORIGIN] });
   return false;
 };
 

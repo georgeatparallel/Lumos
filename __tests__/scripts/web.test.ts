@@ -1,6 +1,7 @@
 import {
   callWebTool,
   resolveWebTool,
+  setWebPermission,
   WEB_ENDPOINT,
   WEB_USER_AGENT,
 } from "../../src/tools/web";
@@ -331,3 +332,23 @@ test.each(["initialize", "tools/list"])(
     expect(requests.some((r) => r.rpc.method === "tools/call")).toBe(false);
   },
 );
+
+test("revoking host consent blocks requests while header cleanup is pending", async () => {
+  let finishCleanup!: () => void;
+  const cleanup = new Promise<void>((resolve) => {
+    finishCleanup = resolve;
+  });
+  chrome.permissions.remove = jest.fn().mockImplementation(async () => {
+    contains.mockResolvedValue(false);
+    return true;
+  });
+  updateSessionRules.mockImplementationOnce(() => cleanup);
+  const revoking = setWebPermission(false);
+  await Promise.resolve();
+  await expect(
+    callWebTool(search, "conversation-a", new AbortController().signal),
+  ).rejects.toThrow("Allow web access");
+  expect(global.fetch).not.toHaveBeenCalled();
+  finishCleanup();
+  await expect(revoking).resolves.toBe(false);
+});
